@@ -17,11 +17,21 @@ import java.util.concurrent.TimeUnit;
 
 public class RedisSinks {
 
-    public static <K, V> Sink<ScoredValue<V>> sortedSet(String name, String uri, SupplierEx<RedisCodec<K, V>> codecSupplier, K key) {
+    public static <K, V> Sink<ScoredValue<V>> sortedSet(
+            String name,
+            String uri,
+            SupplierEx<RedisCodec<K, V>> codecSupplier,
+            K key
+    ) {
         return sortedSet(name, RedisURI.create(uri), codecSupplier, key);
     }
 
-    public static <K, V> Sink<ScoredValue<V>> sortedSet(String name, RedisURI uri, SupplierEx<RedisCodec<K, V>> codecSupplier, K key) {
+    public static <K, V> Sink<ScoredValue<V>> sortedSet(
+            String name,
+            RedisURI uri,
+            SupplierEx<RedisCodec<K, V>> codecSupplier,
+            K key
+    ) {
         return SinkBuilder.sinkBuilder(name, ctx -> new WriteContext<>(uri, codecSupplier.get(), key))
                 .<ScoredValue<V>>receiveFn(WriteContext::store)
                 .flushFn(WriteContext::flush)

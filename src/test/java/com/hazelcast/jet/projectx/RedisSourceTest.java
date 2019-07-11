@@ -14,13 +14,18 @@ package com.hazelcast.jet.projectx;/*
  * limitations under the License.
  */
 
+import com.hazelcast.core.ISet;
 import com.hazelcast.jet.IListJet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.Job;
+import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.core.JetTestSupport;
 import com.hazelcast.jet.pipeline.Pipeline;
+import com.hazelcast.jet.pipeline.Sink;
+import com.hazelcast.jet.pipeline.SinkBuilder;
 import com.hazelcast.jet.pipeline.Sinks;
 import io.lettuce.core.RedisClient;
+import io.lettuce.core.StreamMessage;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
 import org.junit.After;
@@ -28,22 +33,30 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
+import static com.hazelcast.jet.config.ProcessingGuarantee.EXACTLY_ONCE;
 import static org.junit.Assert.assertEquals;
 
 public class RedisSourceTest extends JetTestSupport {
 
     @Rule
     public RedisContainer redisContainer = new RedisContainer();
-    RedisClient redisClient;
-    StatefulRedisConnection<String, String> connection;
+    private RedisClient redisClient;
+    private StatefulRedisConnection<String, String> connection;
+    private JetInstance instance;
+    private JetInstance instanceToShutDown;
 
     @Before
     public void setup() {
         redisClient = redisContainer.newRedisClient();
         connection = redisClient.connect();
+
+        instance = createJetMember();
+        instanceToShutDown = createJetMember();
     }
 
     @After
@@ -53,46 +66,58 @@ public class RedisSourceTest extends JetTestSupport {
     }
 
     @Test
-    public void testRedisStreamSource_withSingleStream() throws InterruptedException {
-        RedisCommands<String, String> commands = connection.sync();
+    public void testRedisStreamSource_withSnapshotting() {
 
-        int addCount = 300;
+        int addCount = 60_000;
+        int streamCount = 8;
 
-        for (int i = 0; i < addCount; i++) {
-            commands.xadd("myStream", "foo-" + i, "bar-" + i);
+        for (int i = 0; i < streamCount; i++) {
+            int streamIndex = i;
+            spawn(() -> fillStream("stream-" + streamIndex, addCount));
         }
 
         Map<String, String> streamOffsets = new HashMap<>();
-        streamOffsets.put("myStream", "0");
+        for (int i = 0; i < streamCount; i++) {
+            streamOffsets.put("stream-" + i, "0");
+        }
+
+        Sink<Object> sink = SinkBuilder
+                .sinkBuilder("set", c -> c.jetInstance().getHazelcastInstance().getSet("set"))
+                .receiveFn(Set::add)
+                .build();
 
         Pipeline p = Pipeline.create();
-        p.drawFrom(RedisSources.redisStream(redisContainer.connectionString(), streamOffsets))
+        p.drawFrom(RedisSources.redisStream(redisContainer.connectionString(), streamOffsets,
+                mes -> mes.getStream() + " - " + mes.getId()))
          .withoutTimestamps()
-         .drainTo(Sinks.list("list"));
-
-        JetInstance instance1 = createJetMember();
-        JetInstance instance2 = createJetMember();
-        Job job = instance1.newJob(p);
-
-        sleepSeconds(2);
-
-        for (int i = 0; i < addCount; i++) {
-            commands.xadd("myStream", "foo-" + i, "bar-" + i);
-        }
-
-        sleepSeconds(1);
-
-        for (int i = 0; i < addCount; i++) {
-            commands.xadd("myStream", "foo-" + i, "bar-" + i);
-        }
-
-        sleepSeconds(2);
+         .drainTo(sink);
 
 
-        IListJet<Object> list = instance1.getList("list");
-        assertEquals(addCount * 3, list.size());
+        JobConfig config = new JobConfig();
+        config.setProcessingGuarantee(EXACTLY_ONCE)
+              .setSnapshotIntervalMillis(3000);
+        Job job = instance.newJob(p, config);
+
+        sleepSeconds(15);
+        instanceToShutDown.shutdown();
+        sleepSeconds(15);
+        instanceToShutDown = createJetMember();
+
+        Collection<Object> collection = instance.getHazelcastInstance().getSet("set");
+
+        assertTrueEventually(() -> {
+            assertEquals(addCount * streamCount, collection.size());
+        });
 
         job.cancel();
+    }
+
+    private void fillStream(String stream, int addCount) {
+        RedisCommands<String, String> commands = connection.sync();
+        for (int i = 0; i < addCount; i++) {
+            commands.xadd(stream, "foo-" + i, "bar" + i);
+        }
+        System.out.println("qwe completed adding for " + stream);
     }
 
 }

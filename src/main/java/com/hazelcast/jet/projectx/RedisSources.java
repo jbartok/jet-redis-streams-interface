@@ -42,25 +42,35 @@ public class RedisSources {
             Map<String, String> streamOffsets,
             FunctionEx<? super StreamMessage<String, String>, ? extends T> projectionFn
     ) {
-        return streamFromProcessorWithWatermarks("redisStreamSource",
-                w -> streamRedisP(connectionString, streamOffsets, w, StringCodec::new, projectionFn), false);
+        return redisStream(connectionString, streamOffsets, StringCodec::new, projectionFn);
     }
 
     public static StreamSource<Map<String, String>> redisStream(
             String connectionString,
             Map<String, String> streamOffsets
     ) {
-        return streamFromProcessorWithWatermarks("redisStreamSource",
-                w -> streamRedisP(connectionString, streamOffsets, w, StringCodec::new, StreamMessage::getBody), false);
+        return redisStream(connectionString, streamOffsets, StreamMessage::getBody);
     }
 
-    public static <K, V> BatchSource<ScoredValue<V>> sortedSetBatch(String name, String uri, SupplierEx<RedisCodec<K, V>> codecSupplier,
-                                                                    K key, long rangeStart, long rangeEnd) {
+    public static <K, V> BatchSource<ScoredValue<V>> sortedSetBatch(
+            String name,
+            String uri,
+            SupplierEx<RedisCodec<K, V>> codecSupplier,
+            K key,
+            long rangeStart,
+            long rangeEnd
+    ) {
         return sortedSetBatch(name, RedisURI.create(uri), codecSupplier, key, rangeStart, rangeEnd);
     }
 
-    public static <K, V> BatchSource<ScoredValue<V>> sortedSetBatch(String name, final RedisURI uri, SupplierEx<RedisCodec<K, V>> codecSupplier,
-                                                                    K key, long rangeStart, long rangeEnd) {
+    public static <K, V> BatchSource<ScoredValue<V>> sortedSetBatch(
+            String name,
+            RedisURI uri,
+            SupplierEx<RedisCodec<K, V>> codecSupplier,
+            K key,
+            long rangeStart,
+            long rangeEnd
+    ) {
         return SourceBuilder.batch(name, ctx -> new QueryContext<>(uri, codecSupplier.get(), key, rangeStart, rangeEnd))
                 .<ScoredValue<V>>fillBufferFn(QueryContext::fillBuffer)
                 .destroyFn(QueryContext::close)
