@@ -14,8 +14,6 @@ package com.hazelcast.jet.projectx;/*
  * limitations under the License.
  */
 
-import com.hazelcast.core.ISet;
-import com.hazelcast.jet.IListJet;
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.Job;
 import com.hazelcast.jet.config.JobConfig;
@@ -23,9 +21,7 @@ import com.hazelcast.jet.core.JetTestSupport;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.Sink;
 import com.hazelcast.jet.pipeline.SinkBuilder;
-import com.hazelcast.jet.pipeline.Sinks;
 import io.lettuce.core.RedisClient;
-import io.lettuce.core.StreamMessage;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisCommands;
 import org.junit.After;
@@ -89,13 +85,13 @@ public class RedisSourceTest extends JetTestSupport {
         Pipeline p = Pipeline.create();
         p.drawFrom(RedisSources.redisStream(redisContainer.connectionString(), streamOffsets,
                 mes -> mes.getStream() + " - " + mes.getId()))
-         .withoutTimestamps()
-         .drainTo(sink);
+                .withoutTimestamps()
+                .drainTo(sink);
 
 
         JobConfig config = new JobConfig();
         config.setProcessingGuarantee(EXACTLY_ONCE)
-              .setSnapshotIntervalMillis(3000);
+                .setSnapshotIntervalMillis(3000);
         Job job = instance.newJob(p, config);
 
         sleepSeconds(15);

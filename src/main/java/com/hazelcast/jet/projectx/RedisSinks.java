@@ -32,14 +32,14 @@ public class RedisSinks {
             SupplierEx<RedisCodec<K, V>> codecSupplier,
             K key
     ) {
-        return SinkBuilder.sinkBuilder(name, ctx -> new WriteContext<>(uri, codecSupplier.get(), key))
-                .<ScoredValue<V>>receiveFn(WriteContext::store)
-                .flushFn(WriteContext::flush)
-                .destroyFn(WriteContext::destroy)
+        return SinkBuilder.sinkBuilder(name, ctx -> new SortedSetContext<>(uri, codecSupplier.get(), key))
+                .<ScoredValue<V>>receiveFn(SortedSetContext::store)
+                .flushFn(SortedSetContext::flush)
+                .destroyFn(SortedSetContext::destroy)
                 .build();
     }
 
-    private static class WriteContext<K, V> {
+    private static class SortedSetContext<K, V> {
 
         private final RedisClient client;
         private final StatefulRedisConnection<K, V> connection;
@@ -48,7 +48,7 @@ public class RedisSinks {
         private final K key;
 
 
-        WriteContext(RedisURI uri, RedisCodec<K, V> codec, K key) {
+        SortedSetContext(RedisURI uri, RedisCodec<K, V> codec, K key) {
             client = RedisClient.create(uri);
             connection = client.connect(codec);
             commands = connection.async();

@@ -71,13 +71,13 @@ public class RedisSources {
             long rangeStart,
             long rangeEnd
     ) {
-        return SourceBuilder.batch(name, ctx -> new QueryContext<>(uri, codecSupplier.get(), key, rangeStart, rangeEnd))
-                .<ScoredValue<V>>fillBufferFn(QueryContext::fillBuffer)
-                .destroyFn(QueryContext::close)
+        return SourceBuilder.batch(name, ctx -> new SortedSetContext<>(uri, codecSupplier.get(), key, rangeStart, rangeEnd))
+                .<ScoredValue<V>>fillBufferFn(SortedSetContext::fillBuffer)
+                .destroyFn(SortedSetContext::close)
                 .build();
     }
 
-    private static final class QueryContext<K, V> implements ScoredValueStreamingChannel<V> {
+    private static final class SortedSetContext<K, V> implements ScoredValueStreamingChannel<V> {
 
         private static final int NO_OF_ITEMS_TO_FETCH_AT_ONCE = 100;
 
@@ -89,7 +89,7 @@ public class RedisSources {
 
         private volatile InterruptedException exception;
 
-        QueryContext(RedisURI uri, RedisCodec<K, V> codec, K key, long start, long stop) {
+        SortedSetContext(RedisURI uri, RedisCodec<K, V> codec, K key, long start, long stop) {
             client = RedisClient.create(uri);
             connection = client.connect(codec);
 
