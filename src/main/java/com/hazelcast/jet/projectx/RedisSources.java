@@ -1,5 +1,6 @@
 package com.hazelcast.jet.projectx;
 
+import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.function.FunctionEx;
 import com.hazelcast.jet.function.SupplierEx;
 import com.hazelcast.jet.pipeline.BatchSource;
@@ -17,10 +18,10 @@ import io.lettuce.core.codec.RedisCodec;
 import io.lettuce.core.codec.StringCodec;
 import io.lettuce.core.output.ScoredValueStreamingChannel;
 
-import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.jet.pipeline.Sources.streamFromProcessorWithWatermarks;
@@ -83,6 +84,70 @@ public class RedisSources {
                 .<ScoredValue<V>>fillBufferFn(SortedSetContext::fillBuffer)
                 .destroyFn(SortedSetContext::close)
                 .build();
+    }
+
+    public static <K, V, T> BatchSource<T> hash(
+            RedisURI uri,
+            K stream,
+            SupplierEx<RedisCodec<K, V>> codecSupplier,
+            FunctionEx<Map.Entry<K, V>, T> mapFn
+    ) {
+        return SourceBuilder
+                .batch("hash", context -> new HashContext<>(uri, stream, codecSupplier, mapFn))
+                .<T>fillBufferFn(HashContext::fillBuffer)
+                .destroyFn(HashContext::close)
+                .build();
+    }
+
+    public static <T> BatchSource<T> hash(
+            RedisURI uri,
+            String stream,
+            FunctionEx<Map.Entry<String, String>, T> mapFn
+    ) {
+        return hash(uri, stream, StringCodec::new, mapFn);
+    }
+
+    public static BatchSource<Map.Entry<String, String>> hash(
+            RedisURI uri,
+            String stream
+    ) {
+        return hash(uri, stream, t -> t);
+    }
+
+    private static class HashContext<K, V, T> {
+
+        private final RedisClient redisClient;
+        private final StatefulRedisConnection<K, V> connection;
+        private final RedisFuture<Map<K, V>> future;
+        private final FunctionEx<Map.Entry<K, V>, T> mapFn;
+
+        public HashContext(
+                RedisURI uri,
+                K stream,
+                SupplierEx<RedisCodec<K, V>> codecSupplier,
+                FunctionEx<Map.Entry<K, V>, T> mapFn
+        ) {
+            redisClient = RedisClient.create(uri);
+            connection = redisClient.connect(codecSupplier.get());
+            future = connection.async().hgetall(stream);
+
+            this.mapFn = mapFn;
+        }
+
+        public void fillBuffer(SourceBuilder.SourceBuffer<T> buffer) throws Exception {
+            Map<K, V> map = future.get();
+            map.entrySet().forEach(e -> {
+                T item = mapFn.apply(e);
+                if (item != null) {
+                    buffer.add(item);
+                }
+            });
+        }
+
+        public void close() {
+            connection.close();
+            redisClient.shutdown();
+        }
     }
 
     private static final class SortedSetContext<K, V> implements ScoredValueStreamingChannel<V> {

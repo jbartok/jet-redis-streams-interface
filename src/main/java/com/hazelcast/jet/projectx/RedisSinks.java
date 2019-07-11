@@ -1,5 +1,6 @@
 package com.hazelcast.jet.projectx;
 
+import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.function.BiFunctionEx;
 import com.hazelcast.jet.function.SupplierEx;
 import com.hazelcast.jet.pipeline.Sink;

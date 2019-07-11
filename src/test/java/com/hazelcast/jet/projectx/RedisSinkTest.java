@@ -91,7 +91,7 @@ public class RedisSinkTest extends JetTestSupport {
     public void benchmark() throws InterruptedException, ExecutionException, TimeoutException {
         RedisAsyncCommands<String, String> async = connection.async();
 
-        long itemCount = 1_000_000;
+        long itemCount = 100_000;
         int streamCount = 1;
 
         for (int j = 0; j < streamCount; j++) {
