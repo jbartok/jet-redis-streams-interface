@@ -17,6 +17,7 @@ import io.lettuce.core.codec.RedisCodec;
 import io.lettuce.core.codec.StringCodec;
 import io.lettuce.core.output.ScoredValueStreamingChannel;
 
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -24,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.jet.pipeline.Sources.streamFromProcessorWithWatermarks;
 import static com.hazelcast.jet.projectx.StreamRedisP.streamRedisP;
+import static java.util.Collections.singletonMap;
 
 public class RedisSources {
 
@@ -50,6 +52,12 @@ public class RedisSources {
             Map<String, String> streamOffsets
     ) {
         return redisStream(connectionString, streamOffsets, StreamMessage::getBody);
+    }
+
+    public static StreamSource<Map<String, String>> redisStream(
+            String connectionString, String stream, String offset
+    ) {
+        return redisStream(connectionString, singletonMap(stream, offset), StreamMessage::getBody);
     }
 
     public static <K, V> BatchSource<ScoredValue<V>> sortedSetBatch(

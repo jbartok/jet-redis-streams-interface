@@ -16,7 +16,9 @@ import io.lettuce.core.codec.StringCodec;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
+import static java.util.Collections.singletonMap;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class RedisSinks {
@@ -47,7 +49,7 @@ public class RedisSinks {
             RedisURI uri,
             K stream,
             SupplierEx<RedisCodec<K, V>> codecFn,
-            BiFunctionEx<K, T, Object[]> mapFn
+            BiFunctionEx<K, T, Map<K, V>> mapFn
     ) {
         return SinkBuilder
                 .sinkBuilder("redisStream", c -> new StreamContext<>(uri, stream, codecFn, mapFn))
@@ -60,23 +62,23 @@ public class RedisSinks {
     public static <T> Sink<T> redisStream(
             RedisURI uri,
             String stream,
-            BiFunctionEx<String, T, Object[]> mapFn
+            BiFunctionEx<String, T, Map<String, String>> mapFn
     ) {
         return redisStream(uri, stream, StringCodec::new, mapFn);
     }
 
-    public static Sink<Object[]> redisStream(
+    public static Sink<Object> redisStream(
             RedisURI uri,
             String stream
     ) {
-        return redisStream(uri, stream, (s, item) -> item);
+        return redisStream(uri, stream, (s, item) -> singletonMap(s, item.toString()));
     }
 
     private static class StreamContext<K, V, T> {
 
         private final RedisClient redisClient;
         private final StatefulRedisConnection<K, V> connection;
-        private final BiFunctionEx<K, T, Object[]> mapFn;
+        private final BiFunctionEx<K, T, Map<K, V>> mapFn;
         private final K stream;
         private final List<RedisFuture<String>> futures = new ArrayList<>();
 
@@ -84,7 +86,7 @@ public class RedisSinks {
                 RedisURI uri,
                 K stream,
                 SupplierEx<RedisCodec<K, V>> codecFn,
-                BiFunctionEx<K, T, Object[]> mapFn
+                BiFunctionEx<K, T, Map<K, V>> mapFn
         ) {
             this.stream = stream;
             this.mapFn = mapFn;
@@ -100,7 +102,7 @@ public class RedisSinks {
         }
 
         public void flush() {
-            boolean flushed = LettuceFutures.awaitAll(1, SECONDS, futures.toArray(new RedisFuture[0]));
+            boolean flushed = LettuceFutures.awaitAll(10, SECONDS, futures.toArray(new RedisFuture[0]));
             if (!flushed) {
                 throw new RuntimeException("Flushing failed!");
             }

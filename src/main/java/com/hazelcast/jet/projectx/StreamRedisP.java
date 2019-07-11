@@ -61,7 +61,7 @@ import static com.hazelcast.util.CollectionUtil.isEmpty;
 public class StreamRedisP<K, V, T> extends AbstractProcessor {
 
     private static final Duration POLL_TIMEOUT_MS = Duration.ofMillis(50);
-    private static final int BATCH_COUNT = 100;
+    private static final int BATCH_COUNT = 1_000;
 
     private final String connectionString;
     private final Map<K, String> streamOffsets;
