@@ -1,5 +1,6 @@
 package com.hazelcast.jet.projectx;
 
+import com.hazelcast.jet.function.BiFunctionEx;
 import com.hazelcast.jet.function.SupplierEx;
 import com.hazelcast.jet.pipeline.Sink;
 import com.hazelcast.jet.pipeline.SinkBuilder;
@@ -11,9 +12,12 @@ import io.lettuce.core.ScoredValue;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.async.RedisAsyncCommands;
 import io.lettuce.core.codec.RedisCodec;
+import io.lettuce.core.codec.StringCodec;
 
 import java.util.ArrayList;
-import java.util.concurrent.TimeUnit;
+import java.util.List;
+
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 public class RedisSinks {
 
@@ -39,6 +43,76 @@ public class RedisSinks {
                 .build();
     }
 
+    public static <T, K, V> Sink<T> redisStream(
+            RedisURI uri,
+            K stream,
+            SupplierEx<RedisCodec<K, V>> codecFn,
+            BiFunctionEx<K, T, Object[]> mapFn
+    ) {
+        return SinkBuilder
+                .sinkBuilder("redisStream", c -> new StreamContext<>(uri, stream, codecFn, mapFn))
+                .<T>receiveFn(StreamContext::add)
+                .flushFn(StreamContext::flush)
+                .destroyFn(StreamContext::close)
+                .build();
+    }
+
+    public static <T> Sink<T> redisStream(
+            RedisURI uri,
+            String stream,
+            BiFunctionEx<String, T, Object[]> mapFn
+    ) {
+        return redisStream(uri, stream, StringCodec::new, mapFn);
+    }
+
+    public static Sink<Object[]> redisStream(
+            RedisURI uri,
+            String stream
+    ) {
+        return redisStream(uri, stream, (s, item) -> item);
+    }
+
+    private static class StreamContext<K, V, T> {
+
+        private final RedisClient redisClient;
+        private final StatefulRedisConnection<K, V> connection;
+        private final BiFunctionEx<K, T, Object[]> mapFn;
+        private final K stream;
+        private final List<RedisFuture<String>> futures = new ArrayList<>();
+
+        private StreamContext(
+                RedisURI uri,
+                K stream,
+                SupplierEx<RedisCodec<K, V>> codecFn,
+                BiFunctionEx<K, T, Object[]> mapFn
+        ) {
+            this.stream = stream;
+            this.mapFn = mapFn;
+
+            redisClient = RedisClient.create(uri);
+            connection = redisClient.connect(codecFn.get());
+        }
+
+        public void add(T item) {
+            RedisAsyncCommands<K, V> async = connection.async();
+            RedisFuture<String> future = async.xadd(stream, mapFn.apply(stream, item));
+            futures.add(future);
+        }
+
+        public void flush() {
+            boolean flushed = LettuceFutures.awaitAll(1, SECONDS, futures.toArray(new RedisFuture[0]));
+            if (!flushed) {
+                throw new RuntimeException("Flushing failed!");
+            }
+            futures.clear();
+        }
+
+        public void close() {
+            connection.close();
+            redisClient.shutdown();
+        }
+    }
+
     private static class SortedSetContext<K, V> {
 
         private final RedisClient client;
@@ -60,7 +134,7 @@ public class RedisSinks {
         }
 
         void flush() {
-            boolean flushed = LettuceFutures.awaitAll(1, TimeUnit.SECONDS, futures.toArray(new RedisFuture[0])); //todo: garbage!
+            boolean flushed = LettuceFutures.awaitAll(1, SECONDS, futures.toArray(new RedisFuture[0])); //todo: garbage!
             if (!flushed) {
                 throw new RuntimeException("Flushing failed!"); //todo: is there something better to do?
             }

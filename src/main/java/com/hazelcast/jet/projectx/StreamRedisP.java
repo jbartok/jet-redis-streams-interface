@@ -60,8 +60,6 @@ import static com.hazelcast.util.CollectionUtil.isEmpty;
  */
 public class StreamRedisP<K, V, T> extends AbstractProcessor {
 
-    private static final int PREFERRED_LOCAL_PARALLELISM = 2;
-
     private static final Duration POLL_TIMEOUT_MS = Duration.ofMillis(50);
     private static final int BATCH_COUNT = 100;
 
