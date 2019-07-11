@@ -1,6 +1,5 @@
 package com.hazelcast.jet.projectx;
 
-import com.hazelcast.jet.datamodel.Tuple2;
 import com.hazelcast.jet.function.BiFunctionEx;
 import com.hazelcast.jet.function.SupplierEx;
 import com.hazelcast.jet.pipeline.Sink;
@@ -16,6 +15,7 @@ import io.lettuce.core.codec.RedisCodec;
 import io.lettuce.core.codec.StringCodec;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -73,6 +73,60 @@ public class RedisSinks {
             String stream
     ) {
         return redisStream(uri, stream, (s, item) -> singletonMap(s, item.toString()));
+    }
+
+    public static <K, V> Sink<Map.Entry<K, V>> hash(
+            RedisURI uri,
+            K stream,
+            SupplierEx<RedisCodec<K, V>> codecFn
+    ) {
+        return SinkBuilder
+                .sinkBuilder("hash", context -> new HashContext<>(uri, stream, codecFn))
+                .<Map.Entry<K, V>>receiveFn(HashContext::add)
+                .flushFn(HashContext::flush)
+                .destroyFn(HashContext::close)
+                .build();
+    }
+
+    public static Sink<Map.Entry<String, String>> hash(
+            RedisURI uri,
+            String stream
+    ) {
+        return hash(uri, stream, StringCodec::new);
+    }
+
+    private static class HashContext<K, V> {
+
+        private final RedisClient redisClient;
+        private final StatefulRedisConnection<K, V> connection;
+        private final K stream;
+
+        private final Map<K, V> map = new HashMap<>();
+
+        public HashContext(
+                RedisURI uri,
+                K stream,
+                SupplierEx<RedisCodec<K, V>> codecFn
+        ) {
+            this.stream = stream;
+
+            redisClient = RedisClient.create(uri);
+            connection = redisClient.connect(codecFn.get());
+        }
+
+        public void add(Map.Entry<K, V> item) {
+            map.put(item.getKey(), item.getValue());
+        }
+
+        public void flush() {
+            connection.sync().hmset(stream, map);
+            map.clear();
+        }
+
+        public void close() {
+            connection.close();
+            redisClient.shutdown();
+        }
     }
 
     private static class StreamContext<K, V, T> {

@@ -16,13 +16,18 @@ package com.hazelcast.jet.projectx;/*
 
 import com.hazelcast.jet.JetInstance;
 import com.hazelcast.jet.Job;
+import com.hazelcast.jet.aggregate.AggregateOperations;
 import com.hazelcast.jet.config.JobConfig;
 import com.hazelcast.jet.core.JetTestSupport;
+import com.hazelcast.jet.pipeline.BatchStage;
 import com.hazelcast.jet.pipeline.Pipeline;
 import com.hazelcast.jet.pipeline.Sink;
 import com.hazelcast.jet.pipeline.SinkBuilder;
+import com.hazelcast.jet.pipeline.Sinks;
 import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.async.RedisAsyncCommands;
 import io.lettuce.core.api.sync.RedisCommands;
 import org.junit.After;
 import org.junit.Before;
@@ -33,6 +38,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 
 import static com.hazelcast.jet.config.ProcessingGuarantee.EXACTLY_ONCE;
 import static org.junit.Assert.assertEquals;
@@ -52,13 +58,37 @@ public class RedisSourceTest extends JetTestSupport {
         connection = redisClient.connect();
 
         instance = createJetMember();
-        instanceToShutDown = createJetMember();
+//        instanceToShutDown = createJetMember();
     }
 
     @After
     public void teardown() {
         connection.close();
         redisClient.shutdown();
+    }
+
+    @Test
+    public void testHash() throws ExecutionException, InterruptedException {
+        long begin = System.currentTimeMillis();
+        fillHash("stream", 10_00_000);
+        long fill = System.currentTimeMillis() - begin;
+
+
+        Pipeline p = Pipeline.create();
+        BatchStage<Map.Entry<String, String>> sourceStage =
+                p.drawFrom(RedisSources.hash(RedisURI.create(redisContainer.connectionString()), "stream"));
+        sourceStage
+         .aggregate(AggregateOperations.counting())
+         .drainTo(Sinks.logger());
+
+        sourceStage.drainTo(RedisSinks.hash(RedisURI.create(redisContainer.connectionString()), "sinkStream"));
+
+        instance.newJob(p).join();
+        
+        long job = System.currentTimeMillis() - begin;
+
+        System.out.println("qwe " + fill + " - " + job);
+
     }
 
     @Test
@@ -110,8 +140,26 @@ public class RedisSourceTest extends JetTestSupport {
 
     private void fillStream(String stream, int addCount) {
         RedisCommands<String, String> commands = connection.sync();
+//        RedisAsyncCommands<String, String> commands = connection.async();
         for (int i = 0; i < addCount; i++) {
             commands.xadd(stream, "foo-" + i, "bar" + i);
+        }
+        System.out.println("qwe completed adding for " + stream);
+    }
+
+    private void fillHash(String stream, int addCount) {
+        RedisCommands<String, String> commands = connection.sync();
+//        RedisAsyncCommands<String, String> commands = connection.async();
+        Map<String, String> map = new HashMap<>();
+        for (int i = 0; i < addCount; i++) {
+            map.put("foo-" + i, "bar-" + i);
+            if (map.size() == 10_000) {
+                commands.hmset(stream, map);
+                map = new HashMap<>();
+            }
+        }
+        if (!map.isEmpty()) {
+            commands.hmset(stream, map);
         }
         System.out.println("qwe completed adding for " + stream);
     }

@@ -142,6 +142,7 @@ public class RedisSources {
                     buffer.add(item);
                 }
             });
+            buffer.close();
         }
 
         public void close() {
