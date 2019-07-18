@@ -58,7 +58,7 @@ public class RedisSourceTest extends JetTestSupport {
         connection = redisClient.connect();
 
         instance = createJetMember();
-//        instanceToShutDown = createJetMember();
+        instanceToShutDown = createJetMember();
     }
 
     @After
